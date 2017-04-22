@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Exec=chrome_crashed
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name[en_IN]=Chrome Crashed
+Name=Chrome Crashed

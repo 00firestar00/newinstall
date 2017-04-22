@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal --working-directory="/home/data/TnyBot" -e "bash -c 'python3.5 imagebot.py'; bash"
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name[en_IN]=Imagebot
+Name=Imagebot
