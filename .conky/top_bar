@@ -55,25 +55,25 @@ ${font :size=8}${voffset -67}${color0}${goto 58}${freq_g (1)}GHz ${goto 158}${fr
 ${font :size=10} \
 ${if_existing /proc/net/route enp12s0} \
 \
-${goto 420}${voffset -210}${color1}Download ${color0}${offset 30}${downspeedf enp12s0} KiB/s
+${goto 420}${voffset -210}${color1}Download ${color0}${offset 20}${downspeedf enp12s0} KiB/s
 ${goto 420}${downspeedgraph enp12s0 80,160}
-${goto 420}${color1}Upload ${color0}${offset 30}${upspeedf enp12s0} KiB/s
+${goto 420}${color1}Upload ${color0}${offset 40}${upspeedf enp12s0} KiB/s
 ${goto 420}${upspeedgraph enp12s0 80,160}
 ${goto 420}${color1}Local ${color0}${offset 30}${addr enp12s0}
 \
 ${else} ${if_existing /proc/net/route enp11s0} \
 \
-${goto 420}${voffset -210}${color1}Download ${color0}${offset 30}${downspeedf enp11s0} KiB/s
+${goto 420}${voffset -210}${color1}Download ${color0}${offset 20}${downspeedf enp11s0} KiB/s
 ${goto 420}${downspeedgraph enp11s0 80,160}
-${goto 420}${color1}Upload ${color0}${offset 30}${upspeedf enp11s0} KiB/s
+${goto 420}${color1}Upload ${color0}${offset 40}${upspeedf enp11s0} KiB/s
 ${goto 420}${upspeedgraph enp11s0 80,160}
 ${goto 420}${color1}Local ${color0}${offset 30}${addr enp11s0}
 \
 ${else}${if_existing /proc/net/route enp0s31f6} \
 \
-${goto 420}${voffset -210}${color1}Download ${color0}${offset 30}${downspeedf enp0s31f6} KiB/s
+${goto 420}${voffset -210}${color1}Download ${color0}${offset 20}${downspeedf enp0s31f6} KiB/s
 ${goto 420}${downspeedgraph enp0s31f6 80,160}
-${goto 420}${color1}Upload ${color0}${offset 30}${upspeedf enp0s31f6} KiB/s
+${goto 420}${color1}Upload ${color0}${offset 40}${upspeedf enp0s31f6} KiB/s
 ${goto 420}${upspeedgraph enp0s31f6 80,160}
 ${goto 420}${color1}Local ${color0}${offset 30}${addr enp0s31f6}
 ${endif} \
