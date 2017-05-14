@@ -1,4 +1,5 @@
 #!/bin/bash
+sudo su
 
 sudo dnf update -y
 
@@ -15,6 +16,9 @@ sudo dnf install gnome-shell-extension-redshift --allowerasing -y
 
 sudo dnf copr enable region51/chrome-gnome-shell -y
 sudo dnf install chrome-gnome-shell
+
+sudo dnf copr enable dirkdavidis/papirus-icon-theme -y
+sudo install papirus-icon-theme
 
 # Install these applications
 sudo dnf install arc-theme conky-manager dconf-editor ffmpeg gcc gimp git htop \
@@ -45,13 +49,13 @@ rm atom.rpm
 apm install minimap minimap-git-diff
 
 # Jetbrains
-pycharm='pycharm-community-2017.1'
+pycharm='pycharm-community-2017.1.2'
 sudo wget "https://download.jetbrains.com/python/$pycharm.tar.gz" -O /opt/pycharm.tar.gz
 sudo tar -zxf pycharm.tar.gz
 sudo mv $pycharm PyCharm
 rm pycharm.tar.gz
 
-phpstorm='PhpStorm-2017.1.1'
+phpstorm='PhpStorm-2017.1.3'
 sudo wget "https://download.jetbrains.com/webide/$phpstorm.tar.gz" -O /opt/phpstorm.tar.gz
 sudo tar -zxf phpstorm.tar.gz
 rm phpstorm.tar.gz
@@ -72,8 +76,7 @@ Host *
 EOF
 
 # Tnyclick image uploading. API keys not included.
-sudo cat << 'EOF' >> /usr/local/bin/tnyshoot
-#!/bin/bash
+echo '#!/bin/bash
 function uploadImage {
   curl -H "API-ID: " -H "API-Key: " -s -F "image=@$1" https://tny.click/upload.php
 }
@@ -84,33 +87,30 @@ gnome-screenshot -af $img
 clip=$(uploadImage $img)
 echo $clip | xclip -selection c
 rm $img
-notify-send "TnyClick $clip" -t 2000
-EOF
+notify-send "TnyClick $clip" -t 2000' \
+| sudo tee /usr/local/bin/temp
 
-sudo chmod 755 /usr/local/bin/tnyshoot
+sudo chmod 755 /usr/local/bin/temp
 
 # Fixes issues with chrome complaining that it crashed on reboot
-sudo cat << 'EOF'  >> /usr/local/bin/chrome_crashed
-#!/bin/bash
-sed -i 's/"exit_type":"Crashed"/"exit_type":"None"/g' /home/evan/.config/google-chrome-beta/Default/Preferences
-EOF
+echo '#!/bin/bash
+sed -i 's/"exit_type":"Crashed"/"exit_type":"None"/g' /home/evan/.config/google-chrome-beta/Default/Preferences' \
+| sudo tee /usr/local/bin/chrome_crashed
 
 # Because discord is dumb and has a semi-broken ubuntu desktop file instead
-sudo cat << 'EOF' >> /usr/share/applications/discord-canary.desktop
-Name=Discord Canary
+echo "Name=Discord Canary
 StartupWMClass=discord
-Comment=All-in-one voice and text chat for gamers that\'s free, secure, and works on both your desktop and phone.
+Comment=All-in-one voice and text chat for gamers that's free, secure, and works on both your desktop and phone.
 GenericName=Internet Messenger
 Exec=/opt/DiscordCanary/DiscordCanary
 Icon=/opt/DiscordCanary/discord.png
 Type=Application
 StartupNotify=true
-Categories=Network;InstantMessaging;
-EOF
+Categories=Network;InstantMessaging;" \
+| sudo tee /usr/share/applications/discord-canary.desktop
 
 # Add file to update discord, then update/install it
-cat << 'EOF' >> /usr/local/bin/updatecord
-#!/bin/bash
+echo '#!/bin/bash
 #unlink anything that might be there
 rm -rf /tmp/DiscordCanary
 rm -f /tmp/discord.tar.gz
@@ -119,8 +119,8 @@ wget -qO /tmp/discord.tar.gz "https://discordapp.com/api/download/canary?platfor
 #extract it
 tar -zxC /tmp/ -f /tmp/discord.tar.gz
 #rsync to /opt/
-rsync -a /tmp/DiscordCanary /opt/
-EOF
+rsync -a /tmp/DiscordCanary /opt/' \
+| sudo tee /usr/local/bin/updatecord
 
 sudo chmod 755 /usr/local/bin/updatecord
 sh updatecord
