@@ -112,14 +112,29 @@ Categories=Network;InstantMessaging;" \
 # Add file to update discord, then update/install it
 echo '#!/bin/bash
 #unlink anything that might be there
-rm -rf /tmp/DiscordCanary
-rm -f /tmp/discord.tar.gz
-#get the new file
-wget -qO /tmp/discord.tar.gz "https://discordapp.com/api/download/canary?platform=linux&format=tar.gz"
+tmpzip="/tmp/discord.tar.gz"
+tmpfile="/tmp/DiscordCanary"
+installfile="/opt/DiscordCanary"
+
+echo "Removing temp files"
+rm -rf $tmpfile
+rm -f $tmpzip
+
+echo "Downloading latest Discord install"
+wget -qO $tmpzip "https://discordapp.com/api/download/canary?platform=linux&format=tar.gz"
 #extract it
-tar -zxC /tmp/ -f /tmp/discord.tar.gz
-#rsync to /opt/
-rsync -a /tmp/DiscordCanary /opt/' \
+tar -zxC /tmp/ -f $tmpzip
+
+echo "Rsync to $installfile"
+rsync -a $tmpfile /opt/
+
+echo "Removing old mydiscord files"
+rm -rf "$installfile/resources/app"
+rm -f "$installfile/resources/original_app.asar"
+
+echo "Launching Discord"
+"$installfile/DiscordCanary" &
+mydiscord --css /home/data/mydiscord/discord-custom.css' \
 | sudo tee /usr/local/bin/updatecord
 
 sudo chmod 755 /usr/local/bin/updatecord
