@@ -6,13 +6,8 @@ sudo dnf update -y
 sudo dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
 sudo dnf install https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 
-# Not needed in Fedora 26+
-sudo dnf copr enable mystro256/gnome-redshift -y
-sudo dnf install gnome-shell-extension-redshift --allowerasing -y
-
-#Broken in Fedora 25
-#sudo dnf copr enable jjelen/yubikey-neo-manager -y
-#sudo dnf install yubikey-neo-manager -y
+sudo dnf copr enable jjelen/yubikey-neo-manager -y
+sudo dnf install yubikey-neo-manager -y
 
 sudo dnf copr enable region51/chrome-gnome-shell -y
 sudo dnf install chrome-gnome-shell
@@ -22,7 +17,7 @@ sudo install papirus-icon-theme
 
 # Install these applications
 sudo dnf install arc-theme conky-manager dconf-editor ffmpeg gcc gimp git htop \
-libcxx nitrogen python3-devel redhat-rpm-config xclip vlc -y
+libcxx nitrogen nginx python3-devel redhat-rpm-config xclip vlc -y
 
 # Yubikey stuff
 sudo dnf install pam_yubico libu2f-host yubikey-personalization-gui ykclient -y
@@ -49,13 +44,13 @@ rm atom.rpm
 apm install minimap minimap-git-diff
 
 # Jetbrains
-pycharm='pycharm-community-2017.1.2'
+pycharm='pycharm-community-2017.1.4'
 sudo wget "https://download.jetbrains.com/python/$pycharm.tar.gz" -O /opt/pycharm.tar.gz
 sudo tar -zxf pycharm.tar.gz
 sudo mv $pycharm PyCharm
 rm pycharm.tar.gz
 
-phpstorm='PhpStorm-2017.1.3'
+phpstorm='PhpStorm-2017.1.4'
 sudo wget "https://download.jetbrains.com/webide/$phpstorm.tar.gz" -O /opt/phpstorm.tar.gz
 sudo tar -zxf phpstorm.tar.gz
 rm phpstorm.tar.gz
