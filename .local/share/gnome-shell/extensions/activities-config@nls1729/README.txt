@@ -343,6 +343,14 @@ https://nls1729.github.io
            and notify.js which caused errors in prefs.js for GS3.24. Updated
            to GS3.24.  Uploaded for review.
 
-zip file: Wed Apr  5 12:25:56 EDT 2017 6bcc3658e31fbdec9843dca4310dfb7f6d5aad2b
+2017-05-21 Translations updated. Thanks to Jonatan Zeidler
+
+2017-06-18 Added additonal defensive code for hidden corners.
+           Uploaded for review.
+
+2017-06-23 Translation correction. Thanks to Stéphane Roucheray.
+           Uploaded for review.
+
+zip file: Fri Jun 23 15:01:32 EDT 2017 fa3a78b5c47cbf615ce2346f6f061e3a28f4eaec
 
 ...

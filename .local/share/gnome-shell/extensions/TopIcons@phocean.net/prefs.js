@@ -1,35 +1,15 @@
 // -*- mode: js2; indent-tabs-mode: nil; js2-basic-offset: 4 -*-
 
-// const Gio = imports.gi.Gio;
-// const GLib = imports.gi.GLib;
-// const GObject = imports.gi.GObject;
-// const Gtk = imports.gi.Gtk;
-// const Lang = imports.lang;
-// const Mainloop = imports.mainloop;
-
-
-
-// const Gettext = imports.gettext.domain('TopIcons-Plus');
-// const _ = Gettext.gettext;
-// const N_ = function(e) { return e; }
-
-// const ExtensionUtils = imports.misc.extensionUtils;
-// const Me = ExtensionUtils.getCurrentExtension();
-// const Convenience = Me.imports.convenience;
-
 const GObject = imports.gi.GObject;
 const Gtk = imports.gi.Gtk;
 const Lang = imports.lang;
-const Config = imports.misc.config;
 const Gio = imports.gi.Gio;
-
-const Gettext = imports.gettext.domain('TopIcons-Plus');
-const _ = Gettext.gettext;
-const N_ = function(e) { return e; }
 
 const ExtensionUtils = imports.misc.extensionUtils;
 const Me = ExtensionUtils.getCurrentExtension();
 const Convenience = Me.imports.convenience;
+const Gettext = imports.gettext.domain(Me.metadata['gettext-domain']);
+const _ = Gettext.gettext;
 
 function init() {
     Convenience.initTranslations();
@@ -53,7 +33,6 @@ const TopIconsPlusSettings = new GObject.Class({
         let positionSetting = null;
         let positionButton = null;
         let radio = null;
-        //this._changedPermitted = false;
 
         // Icon opacity
         label = new Gtk.Label({
@@ -93,7 +72,7 @@ const TopIconsPlusSettings = new GObject.Class({
 
         // Icon brightness
         label = new Gtk.Label({
-            label: _('Brightness (-1.0 - 1.0)'),
+            label: _('Brightness (min: -1.0, max: 1.0)'),
             hexpand: true,
             halign: Gtk.Align.START
         });
@@ -111,7 +90,7 @@ const TopIconsPlusSettings = new GObject.Class({
 
         // Icon contrast
         label = new Gtk.Label({
-            label: _('Contrast (-1.0 - 1.0)'),
+            label: _('Contrast (min: -1.0, max: 1.0)'),
             hexpand: true,
             halign: Gtk.Align.START
         });
@@ -129,7 +108,7 @@ const TopIconsPlusSettings = new GObject.Class({
 
         // Icon size
         label = new Gtk.Label({
-            label: _('Icon size (0 - 96)'),
+            label: _('Icon size (min: 0, max: 96)'),
             hexpand: true,
             halign: Gtk.Align.START
         });
@@ -147,7 +126,7 @@ const TopIconsPlusSettings = new GObject.Class({
 
         // Icon tray spacing
         label = new Gtk.Label({
-            label: _('Spacing between icons (0 - 20)'),
+            label: _('Spacing between icons (min: 0, max: 20)'),
             hexpand: true,
             halign: Gtk.Align.START
         });
@@ -170,9 +149,9 @@ const TopIconsPlusSettings = new GObject.Class({
             halign: Gtk.Align.START
         });
         widget = new Gtk.ComboBoxText();
-        widget.append('center', "Center");
-        widget.append('left', "Left");
-        widget.append('right', "Right");
+        widget.append('center', _("Center"));
+        widget.append('left', _("Left"));
+        widget.append('right', _("Right"));
         this._settings.bind('tray-pos', widget, 'active-id', Gio.SettingsBindFlags.DEFAULT);
         this.attach(label, 0, 7, 1, 1);
         this.attach(widget, 1, 7, 1, 1);

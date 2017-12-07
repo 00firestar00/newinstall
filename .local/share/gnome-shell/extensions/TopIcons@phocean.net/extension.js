@@ -20,10 +20,12 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
+const Shell = imports.gi.Shell;
 const St = imports.gi.St;
 const Main = imports.ui.main;
 const GLib = imports.gi.GLib;
 const Lang = imports.lang;
+const System = imports.system;
 const Clutter = imports.gi.Clutter;
 const PanelMenu = imports.ui.panelMenu;
 const ExtensionUtils = imports.misc.extensionUtils;
@@ -38,14 +40,19 @@ let trayRemovedId = 0;
 let icons = [];
 let iconsBoxLayout = null;
 let iconsContainer = null;
-let blacklist = ["skype","SkypeNotification@chrisss404.gmail.com"]; // blacklist: array of uuid and wmClass (icon application name)
+let panelChildSignals = {};
+let blacklist = [["skype","SkypeNotification@chrisss404.gmail.com"]]; // blacklist: array of [uuid, wmClass (icon application name)] pairs
 
-function init() { }
+function init() { Convenience.initTranslations(); }
 
 function enable() {
-
-    GLib.idle_add(GLib.PRIORITY_LOW, moveToTop);
     tray = Main.legacyTray;
+
+    if (tray)
+        GLib.idle_add(GLib.PRIORITY_LOW, moveToTop);
+    else
+        GLib.idle_add(GLib.PRIORITY_LOW, createTray);
+
     settings = Convenience.getSettings();
     settings.connect('changed::icon-opacity', Lang.bind(this, setOpacity));
     settings.connect('changed::icon-saturation', Lang.bind(this, setSaturation));
@@ -56,21 +63,28 @@ function enable() {
     settings.connect('changed::tray-pos', Lang.bind(this, placeTray));
     settings.connect('changed::tray-order', Lang.bind(this, placeTray));
 
+    connectPanelChildSignals();
 }
 
 function disable() {
 
-    moveToTray();
+    if (Main.legacyTray)
+        moveToTray();
+    else
+        destroyTray();
     settings.run_dispose();
 
+    disconnectPanelChildSignals();
 }
 
 function onTrayIconAdded(o, icon, role, delay=1000) {
 
     // loop through the array and hide the extension if extension X is enabled and corresponding application is running
-    let wmClass = icon.wm_class ? icon.wm_class.toLowerCase() : '';
-    for (let i = 0; i < blacklist.length; i++) {
-        if (ExtensionUtils.extensions[blacklist[i+1]] !== undefined && ExtensionUtils.extensions[blacklist[i+1]].state === 1 && wmClass === blacklist[i])
+    let iconWmClass = icon.wm_class ? icon.wm_class.toLowerCase() : '';
+    for (let [wmClass, uuid] of blacklist) {
+        if (ExtensionUtils.extensions[uuid] !== undefined &&
+            ExtensionUtils.extensions[uuid].state === 1 &&
+            iconWmClass === wmClass)
             return;
     }
 
@@ -90,13 +104,17 @@ function onTrayIconAdded(o, icon, role, delay=1000) {
         iconsContainer.actor.visible = true;
         return GLib.SOURCE_REMOVE;
     }));
-    
+
     iconsBoxLayout.insert_child_at_index(iconContainer, 0);
     setIcon(icon);
     icons.push(icon);
 }
 
 function onTrayIconRemoved(o, icon) {
+
+    if (icons.indexOf(icon) == -1) {
+      return;
+    }
 
     let parent = icon.get_parent();
     if (parent)
@@ -106,7 +124,72 @@ function onTrayIconRemoved(o, icon) {
 
     if (icons.length === 0)
         iconsContainer.actor.visible = false;
-    
+
+}
+
+function onPanelChange(actor, child) {
+    if (!iconsBoxLayout || iconsBoxLayout.get_parent() === child)
+        return;
+
+    // refresh position on panel left/center/right
+    // box add/remove child event
+    placeTray();
+}
+
+function connectPanelChildSignals() {
+    panelChildSignals = {
+        left: {
+            add: Main.panel._leftBox.connect('actor_added', Lang.bind(this, onPanelChange)),
+            del: Main.panel._leftBox.connect('actor_removed', Lang.bind(this, onPanelChange))
+        },
+        center: {
+            add: Main.panel._centerBox.connect('actor_added', Lang.bind(this, onPanelChange)),
+            del: Main.panel._centerBox.connect('actor_removed', Lang.bind(this, onPanelChange))
+        },
+        right: {
+            add: Main.panel._rightBox.connect('actor_added', Lang.bind(this, onPanelChange)),
+            del: Main.panel._rightBox.connect('actor_removed', Lang.bind(this, onPanelChange))
+        }
+    }
+}
+
+function disconnectPanelChildSignals() {
+    Main.panel._leftBox.disconnect(panelChildSignals.left.add);
+    Main.panel._leftBox.disconnect(panelChildSignals.left.del);
+    Main.panel._centerBox.disconnect(panelChildSignals.center.add);
+    Main.panel._centerBox.disconnect(panelChildSignals.center.del);
+    Main.panel._rightBox.disconnect(panelChildSignals.right.add);
+    Main.panel._rightBox.disconnect(panelChildSignals.right.del);
+}
+
+function createIconsContainer() {
+    // Create box layout for icon containers
+    iconsBoxLayout = new St.BoxLayout();
+    setSpacing();
+
+    // An empty ButtonBox will still display padding,therefore create it without visibility.
+    iconsContainer = new PanelMenu.ButtonBox({visible: false});
+    iconsContainer.actor.add_actor(iconsBoxLayout);
+}
+
+function createTray() {
+    createIconsContainer();
+
+    tray = new Shell.TrayManager();
+    tray.connect('tray-icon-added', onTrayIconAdded);
+    tray.connect('tray-icon-removed', onTrayIconRemoved);
+    tray.manage_screen(global.screen, Main.panel.actor);
+    placeTray();
+}
+
+function destroyTray() {
+    iconsContainer.actor.destroy();
+    iconsContainer = null;
+    iconsBoxLayout = null;
+    icons = [];
+
+    tray = null;
+    System.gc(); // force finalizing tray to unmanage screen
 }
 
 function moveToTop() {
@@ -119,13 +202,7 @@ function moveToTop() {
     trayAddedId = tray._trayManager.connect('tray-icon-added', onTrayIconAdded);
     trayRemovedId = tray._trayManager.connect('tray-icon-removed', onTrayIconRemoved);
 
-    // Create box layout for icon containers 
-    iconsBoxLayout = new St.BoxLayout();
-    setSpacing();
-
-    // An empty ButtonBox will still display padding,therefore create it without visibility.
-    iconsContainer = new PanelMenu.ButtonBox({visible: false});
-    iconsContainer.actor.add_actor(iconsBoxLayout);
+    createIconsContainer();
     placeTray();
 
     // Move each tray icon to the top
@@ -198,19 +275,18 @@ function placeTray() {
     let parent = iconsContainer.actor.get_parent();
     if (parent)
         parent.remove_actor(iconsContainer.actor);
-    
-    if (trayPosition == 'left') {
-        let index = Main.panel._leftBox.get_n_children() - trayOrder;
-        Main.panel._leftBox.insert_child_at_index(iconsContainer.actor, index);
-    }
-    else if (trayPosition == 'center') {
-        let index = Main.panel._centerBox.get_n_children() - trayOrder;
-        Main.panel._centerBox.insert_child_at_index(iconsContainer.actor, index);
-    }
-    else {
-        let index = Main.panel._rightBox.get_n_children() - trayOrder;
-        Main.panel._rightBox.insert_child_at_index(iconsContainer.actor, index);
-    }
+
+    // panel box
+    let box;
+    if (trayPosition == 'left') box = Main.panel._leftBox;
+    else if (trayPosition == 'center') box = Main.panel._centerBox;
+    else box = Main.panel._rightBox;
+
+    // fix index (trayOrder larger than length)
+    let length = box.get_n_children();
+    let index = length - Math.min(trayOrder, length);
+
+    box.insert_child_at_index(iconsContainer.actor, index);
 
 }
 
@@ -251,7 +327,7 @@ function setSaturation(icon) {
         sat_effect.set_factor(desaturationValue);
         sat_effect.set_factor(desaturationValue);
         icon.add_effect_with_name('desaturate', sat_effect);
-    } else {    
+    } else {
         for (let i = 0; i < icons.length; i++) {
              let icon = icons[i];
              let effect = icon.get_effect('desaturate');

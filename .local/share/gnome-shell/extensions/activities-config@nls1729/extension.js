@@ -213,6 +213,7 @@ const Configurator = new Lang.Class({
         this._maxWinSigId3 = null;
         this._shadowString = '';
         this._showLeftSignal = null;
+        this._showRightSignal = null;
         this._hideTimeoutId = 0;
         this._hideCount = 0;
         this._themeTimeoutId = 0;
@@ -597,12 +598,21 @@ const Configurator = new Lang.Class({
 
     _setHiddenCorners: function() {
         this._roundedCornersHidden = this._settings.get_boolean(Keys.HIDE_RC);
-        if (this._roundedCornersHidden && this._showLeftSignal == null) {
-            this._showLeftSignal = Main.panel._leftCorner.actor.connect('show',Lang.bind(this, this._reHideCorners));
-        } else if (!this._roundedCornersHidden && this._showLeftSignal > 0) {
-            Main.panel._leftCorner.actor.disconnect(this._showLeftSignal);
+        if (this._roundedCornersHidden) {
+            if (this._showLeftSignal == null)
+                this._showLeftSignal = Main.panel._leftCorner.actor.connect('show',Lang.bind(this, this._reHideCorners));
+            if (this._showRightSignal == null)
+                this._showRightSignal = Main.panel._rightCorner.actor.connect('show',Lang.bind(this, this._reHideCorners));
+        } else {
+            if (this._showLeftSignal > 0) {
+                Main.panel._leftCorner.actor.disconnect(this._showLeftSignal);
+                this._showLeftSignal = null;
+            }
+            if (this._showRightSignal > 0) {
+                Main.panel._rightCorner.actor.disconnect(this._showRightSignal);
+                this._showRightSignal = null;
+            }
             this._hideCount = 0;
-            this._showLeftSignal = null;
         }
         this._setPanelBackground(false);
     },
@@ -623,7 +633,7 @@ const Configurator = new Lang.Class({
             Mainloop.source_remove(this._hideTimeoutId);
             this._hideTimeoutId = 0;
         }
-        if (Main.panel._leftCorner.actor.visible && this._roundedCornersHidden) {
+        if ((Main.panel._leftCorner.actor.visible || Main.panel._rightCorner.actor.visible) && this._roundedCornersHidden) {
             Main.panel._leftCorner.actor.hide();
             Main.panel._rightCorner.actor.hide();
             this._hideCount = this._hideCount + 1;
@@ -710,6 +720,10 @@ const Configurator = new Lang.Class({
             this._handleCornerSignals(false);
         } else {
             this._handleCornerSignals(true);
+        }
+        if (!this._roundedCornersHidden) {
+            Main.panel._leftCorner.actor.queue_repaint();
+            Main.panel._rightCorner.actor.queue_repaint();
         }
     },
 
@@ -925,6 +939,10 @@ const Configurator = new Lang.Class({
             if (this._showLeftSignal > 0) {
                 Main.panel._leftCorner.actor.disconnect(this._showLeftSignal);
                 this._showLeftSignal = null;
+            }
+            if (this._showRightSignal > 0) {
+                Main.panel._rightCorner.actor.disconnect(this._showRightSignal);
+                this._showRightSignal = null;
             }
             if (this._leftBoxActorAddedSig > 0) {
                 Main.panel._leftBox.disconnect(this._leftBoxActorAddedSig);

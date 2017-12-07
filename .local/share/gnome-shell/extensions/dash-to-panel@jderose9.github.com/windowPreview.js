@@ -22,16 +22,21 @@
  */
 
 
+const BoxPointer = imports.ui.boxpointer;
 const Clutter = imports.gi.Clutter;
 const GLib = imports.gi.GLib;
 const Gtk = imports.gi.Gtk;
 const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
+const Meta = imports.gi.Meta;
 const PopupMenu = imports.ui.popupMenu;
+const RemoteMenu = imports.ui.remoteMenu;
 const Signals = imports.signals;
+const Shell = imports.gi.Shell;
 const St = imports.gi.St;
 const Tweener = imports.ui.tweener;
+const WindowMenu = imports.ui.windowMenu;
 const Workspace = imports.ui.workspace;
 
 const Me = imports.misc.extensionUtils.getCurrentExtension();
@@ -42,7 +47,7 @@ const AppIcons = Me.imports.appIcons;
 let DEFAULT_THUMBNAIL_WIDTH = 350;
 let DEFAULT_THUMBNAIL_HEIGHT = 200;
 
-const thumbnailPreviewMenu = new Lang.Class({
+var thumbnailPreviewMenu = new Lang.Class({
     Name: 'DashToPanel.ThumbnailPreviewMenu',
     Extends: PopupMenu.PopupMenu,
 
@@ -72,12 +77,6 @@ const thumbnailPreviewMenu = new Lang.Class({
 
         Main.uiGroup.add_actor(this.actor);
 
-        this._enterSourceId = this._source.actor.connect('enter-event', Lang.bind(this, this._onEnter));
-        this._leaveSourceId = this._source.actor.connect('leave-event', Lang.bind(this, this._onLeave));
-
-        this._enterMenuId = this.actor.connect('enter-event', Lang.bind(this, this._onMenuEnter));
-        this._leaveMenuId = this.actor.connect('leave-event', Lang.bind(this, this._onMenuLeave));
-
         // Change the initialized side where required.
         this._arrowSide = side;
         this._boxPointer._arrowSide = side;
@@ -85,6 +84,47 @@ const thumbnailPreviewMenu = new Lang.Class({
 
         this._previewBox = new thumbnailPreviewList(this._app, this._dtpSettings);
         this.addMenuItem(this._previewBox);
+
+        this._peekMode = false;
+        this._peekModeEnterTimeoutId = 0;
+        this._peekModeDisableTimeoutId = 0;
+        this._DISABLE_PEEK_MODE_TIMEOUT = 50;
+        this._peekedWindow = null;
+        this._peekModeSavedWorkspaces = null;
+        this._peekModeSavedOrder = null;
+        this._trackOpenWindowsId = null;
+        this._trackClosedWindowsIds = null;
+        this._peekModeOriginalWorkspace = null;
+        this._peekModeCurrentWorkspace = null;
+    },
+
+    enableWindowPreview: function() {
+        // Show window previews on mouse hover
+        this._enterSourceId = this._source.actor.connect('enter-event', Lang.bind(this, this._onEnter));
+        this._leaveSourceId = this._source.actor.connect('leave-event', Lang.bind(this, this._onLeave));
+
+        this._enterMenuId = this.actor.connect('enter-event', Lang.bind(this, this._onMenuEnter));
+        this._leaveMenuId = this.actor.connect('leave-event', Lang.bind(this, this._onMenuLeave));
+    },
+
+    disableWindowPreview: function() {
+        if (this._enterSourceId) {
+            this._source.actor.disconnect(this._enterSourceId);
+            this._enterSourceId = 0;
+        }
+        if (this._leaveSourceId) {
+            this._source.actor.disconnect(this._leaveSourceId);
+            this._leaveSourceId = 0;
+        }
+
+        if (this._enterMenuId) {
+            this.actor.disconnect(this._enterMenuId);
+            this._enterMenuId = 0;
+        }
+        if (this._leaveMenuId) {
+            this.actor.disconnect(this._leaveMenuId);
+            this._leaveMenuId = 0;
+        }
     },
 
     requestCloseMenu: function() {
@@ -157,8 +197,13 @@ const thumbnailPreviewMenu = new Lang.Class({
 
     hoverOpen: function () {
         this._hoverOpenTimeoutId = null;
-        if (!this.isOpen && this._dtpSettings.get_boolean("show-window-previews"))
-            this.popup();
+        if (!this.isOpen && this._dtpSettings.get_boolean("show-window-previews")) {
+            this.popup();          
+            let focusedApp = Shell.WindowTracker.get_default().focus_app;
+            if (focusedApp &&  focusedApp.get_name() === "Oracle VM VirtualBox") {
+                this.actor.grab_key_focus();
+            }
+        }
     },
 
     hoverClose: function () {
@@ -200,12 +245,247 @@ const thumbnailPreviewMenu = new Lang.Class({
             }));
         }
 
-        this.isOpen = false;
-    }
+        if(this._peekMode)
+            this._disablePeekMode();
 
+        this.isOpen = false;
+    },
+
+    _emulateSwitchingWorkspaces: function(oldWorkspace, newWorkspace) {
+        if(oldWorkspace == newWorkspace)
+            return;
+
+        oldWorkspace.list_windows().forEach(Lang.bind(this, function(window) {
+            if(!window.is_on_all_workspaces() && !window.minimized) {
+                let windowActor = window.get_compositor_private();
+                Tweener.addTween(windowActor, {
+                    opacity: 0,
+                    time: Taskbar.DASH_ANIMATION_TIME,
+                    transition: 'easeOutQuad',
+                    onComplete: Lang.bind(this, function(windowActor) {
+                        windowActor.hide();
+                        windowActor.opacity = this._dtpSettings.get_int('peek-mode-opacity');
+                    }),
+                    onCompleteParams: [windowActor]
+                });
+            }
+        }));
+        newWorkspace.list_windows().forEach(Lang.bind(this, function(window) {
+            if(!window.is_on_all_workspaces() && !window.minimized) {
+                let windowActor = window.get_compositor_private();
+                windowActor.show();
+                windowActor.opacity = 0;
+                Tweener.addTween(windowActor, {
+                    opacity: this._dtpSettings.get_int('peek-mode-opacity'),
+                    time: Taskbar.DASH_ANIMATION_TIME,
+                    transition: 'easeOutQuad'
+                });
+            }
+        }));
+
+        this._peekModeCurrentWorkspace = newWorkspace;
+    },
+
+    _disablePeekMode: function() {
+        if(this._peekModeDisableTimeoutId) {
+            Mainloop.source_remove(this._peekModeDisableTimeoutId);
+            this._peekModeDisableTimeoutId = null;
+        }
+        //Restore windows' old state
+        if(this._peekedWindow) {
+            let peekedWindowActor = this._peekedWindow.get_compositor_private();
+            let originalIndex = this._peekModeSavedOrder.indexOf(peekedWindowActor);
+
+            let locatedOnOriginalWorkspace = this._peekModeCurrentWorkspace == this._peekModeOriginalWorkspace;
+            if(!locatedOnOriginalWorkspace)
+                this._emulateSwitchingWorkspaces(this._peekModeCurrentWorkspace, this._peekModeOriginalWorkspace);
+
+            if(peekedWindowActor)
+                global.window_group.set_child_at_index(peekedWindowActor, originalIndex);
+        }
+
+        this._peekModeSavedWorkspaces.forEach(Lang.bind(this, function(workspace) {
+            workspace.forEach(Lang.bind(this, function(pairWindowOpacity) {
+                let window = pairWindowOpacity[0];
+                let initialOpacity = pairWindowOpacity[1];
+                let windowActor = window.get_compositor_private();
+        		if(window && windowActor) {
+                    if(window.minimized || !window.located_on_workspace(this._peekModeOriginalWorkspace))
+                        Tweener.addTween(windowActor, {
+                            opacity: 0,
+                            time: Taskbar.DASH_ANIMATION_TIME,
+                            transition: 'easeOutQuad',
+                            onComplete: Lang.bind(windowActor, function() {
+                                windowActor.hide();
+                                windowActor.opacity = initialOpacity;
+                            })
+                        });
+                    else
+                        Tweener.addTween(windowActor, {
+                            opacity: initialOpacity,
+                            time: Taskbar.DASH_ANIMATION_TIME,
+                            transition: 'easeOutQuad'
+                        });
+                }	
+            }));
+        }));
+        this._peekModeSavedWorkspaces = null;
+        this._peekedWindow = null;
+        this._peekModeSavedOrder = null;
+        this._peekModeCurrentWorkspace = null;
+        this._peekModeOriginalWorkspace = null;
+
+        this._trackClosedWindowsIds.forEach(function(pairWindowSignalId) {
+            if(pairWindowSignalId)
+                pairWindowSignalId[0].disconnect(pairWindowSignalId[1]);
+        });
+        this._trackClosedWindowsIds = null;
+
+        if(this._trackOpenWindowsId) {
+            global.display.disconnect(this._trackOpenWindowsId);
+            this._trackOpenWindowsId = null;
+        }
+
+        this._peekMode = false;
+    },
+
+    _setPeekedWindow: function(newPeekedWindow) {
+        if(this._peekedWindow == newPeekedWindow)
+            return;
+        
+        //We don't need to bother with animating the workspace out and then in if the old peeked workspace is the same as the new one
+        let needToChangeWorkspace = !newPeekedWindow.located_on_workspace(this._peekModeCurrentWorkspace) || (newPeekedWindow.is_on_all_workspaces() && this._peekModeCurrentWorkspace != this._peekModeOriginalWorkspace);
+        if(needToChangeWorkspace) {
+            //If the new peeked window is on every workspace, we get the original one
+            //Otherwise, we get the workspace the window is exclusive to
+            let newWorkspace = newPeekedWindow.get_workspace();
+            this._emulateSwitchingWorkspaces(this._peekModeCurrentWorkspace, newWorkspace);
+        }
+
+        //Hide currently peeked window and show the new one
+        if(this._peekedWindow) {
+            let peekedWindowActor = this._peekedWindow.get_compositor_private();
+            let originalIndex = this._peekModeSavedOrder.indexOf(peekedWindowActor);
+
+            global.window_group.set_child_at_index(peekedWindowActor, originalIndex);
+            if(this._peekedWindow.minimized || (needToChangeWorkspace && !this._peekedWindow.is_on_all_workspaces()))
+                Tweener.addTween(peekedWindowActor, {
+                    opacity: 0,
+                    time: Taskbar.DASH_ANIMATION_TIME,
+                    transition: 'easeOutQuad',
+                    onComplete: Lang.bind(this, function(peekedWindowActor) {
+                        peekedWindowActor.hide();
+                        peekedWindowActor.opacity = this._dtpSettings.get_int('peek-mode-opacity');
+                    }),
+                    onCompleteParams: [peekedWindowActor]
+                });
+            else
+                Tweener.addTween(peekedWindowActor, {
+                    opacity: this._dtpSettings.get_int('peek-mode-opacity'),
+                    time: Taskbar.DASH_ANIMATION_TIME,
+                    transition: 'easeOutQuad'
+                });
+        }
+
+        this._peekedWindow = newPeekedWindow;
+        let peekedWindowActor = this._peekedWindow.get_compositor_private();     
+
+        if(this._peekedWindow.minimized) {
+            peekedWindowActor.opacity = 0;
+            peekedWindowActor.show();
+        }
+
+        global.window_group.set_child_above_sibling(peekedWindowActor, null);
+        Tweener.addTween(peekedWindowActor, {
+            opacity: 255,
+            time: Taskbar.DASH_ANIMATION_TIME,
+            transition: 'easeOutQuad'
+        });      
+    },
+
+    _enterPeekMode: function(thumbnail) {
+        this._peekMode = true;
+        //Remove the enter peek mode timeout
+        if(this._peekModeEnterTimeoutId) {
+            Mainloop.source_remove(this._peekModeEnterTimeoutId);
+            this._peekModeEnterTimeoutId = null;
+        }
+
+        //Save the visible windows in each workspace and lower their opacity
+	    this._peekModeSavedWorkspaces = [];
+        this._peekModeOriginalWorkspace = global.screen.get_active_workspace();
+	    this._peekModeCurrentWorkspace = this._peekModeOriginalWorkspace;
+        
+        for ( let wks=0; wks<global.screen.n_workspaces; ++wks ) {
+            // construct a list with all windows
+            let metaWorkspace = global.screen.get_workspace_by_index(wks);
+            let windows = metaWorkspace.list_windows(); 
+            this._peekModeSavedWorkspaces.push([]);
+            windows.forEach(Lang.bind(this, function(window) {
+                let actor = window.get_compositor_private();
+                let initialOpacity = actor.opacity;
+                Tweener.addTween(actor, {
+                    opacity: this._dtpSettings.get_int('peek-mode-opacity'),
+                    time: Taskbar.DASH_ANIMATION_TIME,
+                    transition: 'easeOutQuad'
+                });
+                this._peekModeSavedWorkspaces[wks].push([window, initialOpacity]);
+            }));
+        }
+
+        //Save the order of the windows in the window group
+        //From my observation first comes the Meta.BackgroundGroup
+        //Then come the Meta.WindowActors in the order of stacking:
+        //first come the minimized windows, then the unminimized
+        //Additionaly, if you tile a window left/right with <Super + Left/Right>,
+        //there might appear St.Widget of type "tile preview" that is on top of the stack
+        this._peekModeSavedOrder = global.window_group.get_children().slice();
+
+        //Track closed windows - pairs (window, signal Id), null for backgrounds
+        this._trackClosedWindowsIds = this._peekModeSavedOrder.map(Lang.bind(this, function(windowActor) {
+            if(!(windowActor instanceof Meta.BackgroundGroup) && !(windowActor instanceof St.Widget))
+                return [windowActor.meta_window, 
+                        windowActor.meta_window.connect('unmanaged', Lang.bind(this, this._peekModeWindowClosed))];
+           else 
+                return null;
+        }));
+
+        //Track newly opened windows
+        if(this._trackOpenWindowsId)
+            global.display.disconnect(this._trackOpenWindowsId);
+        this._trackOpenWindowsId = global.display.connect('window-created', Lang.bind(this, this._peekModeWindowOpened));
+
+        //Having lowered opacity of all the windows, show the peeked window
+        this._setPeekedWindow(thumbnail.window);
+    },
+
+    _peekModeWindowClosed: function(window) {
+        if(this._peekMode && window == this._peekedWindow)
+            this._disablePeekMode();
+    },
+
+    _windowOnTop: function(window) {
+        //There can be St.Widgets "tile-preview" on top of the window stack.
+        //The window is on top if there are no other window actors above it (Except for St.Widgets)
+        let windowStack = global.window_group.get_children();
+        let newWindowIndex = windowStack.indexOf(window.get_compositor_private());
+        
+        for(let index = newWindowIndex + 1; index < windowStack.length; ++index) {
+            if(windowStack[index] instanceof Meta.WindowActor || windowStack[index] instanceof Meta.BackgroundGroup)
+                return false;
+        }
+        return true;
+    },
+
+    _peekModeWindowOpened: function(display, window) {
+        this._disablePeekMode();
+        //If this new window is placed on the top then close the preview
+        if(this._windowOnTop(window))
+            this.requestCloseMenu();
+    }
 });
 
-const thumbnailPreview = new Lang.Class({
+var thumbnailPreview = new Lang.Class({
     Name: 'DashToPanel.ThumbnailPreview',
     Extends: PopupMenu.PopupBaseMenuItem,
 
@@ -215,7 +495,7 @@ const thumbnailPreview = new Lang.Class({
         let scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
         if(!scaleFactor)
             scaleFactor = 1;
-        
+
         this._thumbnailWidth = DEFAULT_THUMBNAIL_WIDTH*scaleFactor;
         this._thumbnailHeight = DEFAULT_THUMBNAIL_HEIGHT*scaleFactor;
 
@@ -254,9 +534,9 @@ const thumbnailPreview = new Lang.Class({
                                   });
         this._titleBin.add_style_class_name("preview-window-title");
 
-        this.window.connect('notify::title', Lang.bind(this, function() {
-                            this._title.set_text(this.window.title);
-                            }));
+        this._titleNotifyId = this.window.connect('notify::title', Lang.bind(this, function() {
+                                                   this._title.set_text(this.window.title);
+                                               }));
 
         this._windowBin = new St.Bin({ child: this.overlayGroup,
                                     x_align: St.Align.MIDDLE,
@@ -280,17 +560,58 @@ const thumbnailPreview = new Lang.Class({
                                   Lang.bind(this, this._onEnter));
         this.actor.connect('key-focus-out',
                                   Lang.bind(this, this._onLeave));
+        this.actor.connect('motion-event',
+                                  Lang.bind(this, this._onMotionEvent));
+        this.actor.connect('destroy',
+                                  Lang.bind(this, this._onDestroy));
+
+        this._previewMenuPopupManager = new previewMenuPopupManager(window, this.actor);
     },
 
-    _onEnter: function() {
+    _onEnter: function(actor, event) {
         this._showCloseButton();
+
+        let topMenu = this._getTopMenu();
+        if(topMenu._dtpSettings.get_boolean('peek-mode')) {
+            if(topMenu._peekMode) {
+                if(topMenu._peekModeDisableTimeoutId) {
+                    Mainloop.source_remove(topMenu._peekModeDisableTimeoutId);
+                    topMenu._peekModeDisableTimeoutId = null;
+                }
+                //Hide the old peeked window and show the window in preview
+                topMenu._setPeekedWindow(this.window);
+            } else if(!this.animatingOut) {
+                //Remove old timeout and set a new one
+                if(topMenu._peekModeEnterTimeoutId)
+                    Mainloop.source_remove(topMenu._peekModeEnterTimeoutId);
+                topMenu._peekModeEnterTimeoutId = Mainloop.timeout_add(topMenu._dtpSettings.get_int('enter-peek-mode-timeout'), Lang.bind(this, function() {
+                    topMenu._enterPeekMode(this);
+                })); 
+            }
+        }
+
         return Clutter.EVENT_PROPAGATE;
     },
 
-    _onLeave: function() {
+    _onLeave: function(actor, event) {
         if (!this._previewBin.has_pointer &&
             !this._closeButton.has_pointer)
             this._hideCloseButton();
+
+        let topMenu = this._getTopMenu();
+        if(topMenu._peekMode) {
+            if(topMenu._peekModeDisableTimeoutId){
+                Mainloop.source_remove(topMenu._peekModeDisableTimeoutId);
+                topMenu._peekModeDisableTimeoutId = null;
+            }
+            topMenu._peekModeDisableTimeoutId = Mainloop.timeout_add(topMenu._DISABLE_PEEK_MODE_TIMEOUT, function() {
+                topMenu._disablePeekMode()
+            });
+        }
+        if(topMenu._peekModeEnterTimeoutId) {
+            Mainloop.source_remove(topMenu._peekModeEnterTimeoutId);
+            topMenu._peekModeEnterTimeoutId = null;
+        }
 
         return Clutter.EVENT_PROPAGATE;
     },
@@ -397,6 +718,12 @@ const thumbnailPreview = new Lang.Class({
     },
 
     _closeWindow: function() {
+        let topMenu = this._getTopMenu();
+        if(topMenu._peekModeEnterTimeoutId) {
+            Mainloop.source_remove(topMenu._peekModeEnterTimeoutId);
+            topMenu._peekModeEnterTimeoutId = null;
+        }
+        
         this.window.delete(global.get_current_time());
     },
 
@@ -430,12 +757,75 @@ const thumbnailPreview = new Lang.Class({
     },
 
     activate: function() {
+        let topMenu = this._getTopMenu();
+
+        if(topMenu._dtpSettings.get_boolean('peek-mode')) {
+            if(topMenu._peekMode) {
+                topMenu._disablePeekMode();
+            }
+            else if(topMenu._peekModeEnterTimeoutId) {
+                Mainloop.source_remove(topMenu._peekModeEnterTimeoutId);
+                topMenu._peekModeEnterTimeoutId = null;
+            }
+        }
+
         Main.activateWindow(this.window);
-        this._getTopMenu().close(~0);
+
+        topMenu.close(~0);
+    },
+
+    _onMotionEvent: function() {
+        //If in normal mode, then set new timeout for entering peek mode after removing the old one
+        let topMenu = this._getTopMenu();
+        if(topMenu._dtpSettings.get_boolean('peek-mode')) {
+            if(!topMenu._peekMode && !this.animatingOut) {
+                if(topMenu._peekModeEnterTimeoutId)
+                    Mainloop.source_remove(topMenu._peekModeEnterTimeoutId);
+                topMenu._peekModeEnterTimeoutId = Mainloop.timeout_add(topMenu._dtpSettings.get_int('enter-peek-mode-timeout'), Lang.bind(this, function() {
+                    topMenu._enterPeekMode(this);
+                }));
+            }
+        }
+    },
+
+    _onButtonReleaseEvent: function(actor, event) {
+        this.actor.remove_style_pseudo_class ('active');
+        switch (event.get_button()) {
+            case 1:
+                // Left click
+                this.activate(event);
+                break;
+            case 2:
+                // Middle click
+                if (this._getTopMenu()._dtpSettings.get_boolean('preview-middle-click-close')) {
+                    this._closeWindow();
+                }
+                break;
+            case 3:
+                // Right click
+                this.showContextMenu(event);
+                break;
+        }
+        return Clutter.EVENT_STOP;
+    },
+
+    showContextMenu: function(event) {
+        let coords = event.get_coords();
+        this._previewMenuPopupManager.showWindowMenuForWindow({
+            x: coords[0],
+            y: coords[1],
+            width: 0,
+            height: 0
+        });
+    },
+
+    _onDestroy: function() {
+        this.window.disconnect(this._titleNotifyId);
+        this._titleNotifyId = 0;
     }
 });
 
-const thumbnailPreviewList = new Lang.Class({
+var thumbnailPreviewList = new Lang.Class({
     Name: 'DashToPanel.ThumbnailPreviewList',
     Extends: PopupMenu.PopupMenuSection,
 
@@ -464,11 +854,6 @@ const thumbnailPreviewList = new Lang.Class({
 
         this._redisplayId = Main.initializeDeferredWork(this.actor, Lang.bind(this, this._redisplay));
         this._scrollbarId = Main.initializeDeferredWork(this.actor, Lang.bind(this, this._showHideScrollbar));
-
-        if (this._stateChangedId > 0) {
-            this.app.disconnect(this._stateChangedId);
-            this._stateChangedId = 0;
-        }
 
         this.actor.connect('destroy', Lang.bind(this, this._onDestroy));
         this._stateChangedId = this.app.connect('windows-changed',
@@ -695,5 +1080,68 @@ const thumbnailPreviewList = new Lang.Class({
     sortWindowsCompareFunction: function(windowA, windowB) {
         return windowA.get_stable_sequence() > windowB.get_stable_sequence();
     }
+});
 
+var previewMenuPopup = new Lang.Class({
+    Name: 'previewMenuPopup',
+    Extends: WindowMenu.WindowMenu,
+
+    _init: function(window, sourceActor) {
+        this.parent(window, sourceActor);
+
+        let side = Taskbar.getPosition();
+        this._arrowSide = side;
+        this._boxPointer._arrowSide = side;
+        this._boxPointer._userArrowSide = side;
+    }
+
+    // Otherwise, just let the parent do its thing?
+});
+
+var previewMenuPopupManager = new Lang.Class({
+    Name: 'previewMenuPopupManagerTest',
+    
+    _init: function(window, source) {
+        this._manager = new PopupMenu.PopupMenuManager({ actor: Main.layoutManager.dummyCursor });
+
+        this._sourceActor = new St.Widget({ reactive: true, visible: false });
+        this._sourceActor.connect('button-press-event', Lang.bind(this,
+            function() {
+                this._manager.activeMenu.toggle();
+            }));
+        Main.uiGroup.add_actor(this._sourceActor);
+
+        this.window = window;
+    },
+
+    showWindowMenuForWindow: function(rect) {
+        let menu = new previewMenuPopup(this.window, this._sourceActor);
+        let window = this.window;
+
+        this._manager.addMenu(menu);
+
+        menu.connect('activate', function() {
+            window.check_alive(global.get_current_time());
+        });
+        let destroyId = window.connect('unmanaged',
+            function() {
+                menu.close();
+            });
+
+        this._sourceActor.set_size(Math.max(1, rect.width), Math.max(1, rect.height));
+        this._sourceActor.set_position(rect.x, rect.y);
+
+        this._sourceActor.show();
+
+        menu.open(BoxPointer.PopupAnimation.NONE);
+        menu.actor.navigate_focus(null, Gtk.DirectionType.TAB_FORWARD, false);
+        menu.connect('open-state-changed', Lang.bind(this, function(menu_, isOpen) {
+            if (isOpen)
+                return;
+
+            this._sourceActor.hide();
+            menu.destroy();
+            window.disconnect(destroyId);
+        }));
+    }
 });

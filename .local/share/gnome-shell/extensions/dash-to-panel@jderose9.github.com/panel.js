@@ -36,8 +36,10 @@ const PanelStyle = Me.imports.panelStyle;
 const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
+const Layout = imports.ui.layout;
 const St = imports.gi.St;
 const GLib = imports.gi.GLib;
+const Meta = imports.gi.Meta;
 const DND = imports.ui.dnd;
 const Shell = imports.gi.Shell;
 const PopupMenu = imports.ui.popupMenu;
@@ -47,7 +49,7 @@ const ViewSelector = imports.ui.viewSelector;
 
 let tracker = Shell.WindowTracker.get_default();
 
-const dtpPanel = new Lang.Class({
+var dtpPanel = new Lang.Class({
     Name: 'DashToPanel.Panel',
 
     _init: function(settings) {
@@ -72,13 +74,21 @@ const dtpPanel = new Lang.Class({
         this._oldViewSelectorAnimateOut = Main.overview.viewSelector._animateOut;
         Main.overview.viewSelector._animateOut = Lang.bind(this, newViewSelectorAnimateOut);
 
+        this._oldUpdatePanelBarrier = Main.layoutManager._updatePanelBarrier;
+        Main.layoutManager._updatePanelBarrier = Lang.bind(Main.layoutManager, newUpdatePanelBarrier);
+        Main.layoutManager._updatePanelBarrier();
+
+        this._oldUpdateHotCorners = Main.layoutManager._updateHotCorners;
+        Main.layoutManager._updateHotCorners = Lang.bind(Main.layoutManager, newUpdateHotCorners);
+        Main.layoutManager._updateHotCorners();
+
         this._oldPanelHeight = this.panel.actor.get_height();
 
         // The overview uses the this.panel height as a margin by way of a "ghost" transparent Clone
         // This pushes everything down, which isn't desired when the this.panel is moved to the bottom
         // I'm adding a 2nd ghost this.panel and will resize the top or bottom ghost depending on the this.panel position
         this._myPanelGhost = new St.Bin({ 
-            child: new Clutter.Clone({ source: Main.overview._panelGhost.get_child(0) }), 
+            child: new Clutter.Clone({ source: Main.overview._panelGhost.get_child() }),
             reactive: false,
             opacity: 0 
         });
@@ -193,11 +203,30 @@ const dtpPanel = new Lang.Class({
             
             return DND.DragMotionResult.CONTINUE;
         });
+
+        // Dynamic transparency is available on Gnome 3.26
+        if (this.panel._updateSolidStyle) {
+            this._injectionsHandler = new Convenience.InjectionsHandler();
+            this.panel._dtpPosition = this._dtpSettings.get_string('panel-position');
+            this._injectionsHandler.addWithLabel('transparency', [
+                this.panel,
+                '_updateSolidStyle',
+                Lang.bind(this.panel, this._dtpUpdateSolidStyle)
+            ]);
+
+            this.panel._updateSolidStyle();
+        }
     },
 
     disable: function () {
         PopupMenu.PopupMenu.prototype.open = this._oldPopupOpen;
         PopupMenu.PopupSubMenu.prototype.open = this._oldPopupSubMenuOpen;
+
+        Main.layoutManager._updateHotCorners = this._oldUpdateHotCorners;
+        Main.layoutManager._updateHotCorners();
+
+        Main.layoutManager._updatePanelBarrier = this._oldUpdatePanelBarrier;
+        Main.layoutManager._updatePanelBarrier();
 
         Main.overview.viewSelector._animateIn = this._oldViewSelectorAnimateIn;
         Main.overview.viewSelector._animateOut = this._oldViewSelectorAnimateOut;
@@ -210,7 +239,7 @@ const dtpPanel = new Lang.Class({
         
         this.panel._rightBox.allocate = this.panel._rightBox.oldRightBoxAllocate;
         delete this.panel._rightBox.oldRightBoxAllocate;
-
+        
         this.panelStyle.disable();
 
         this._signalsHandler.destroy();
@@ -242,6 +271,12 @@ const dtpPanel = new Lang.Class({
         this._setActivitiesButtonVisible(true);
         this._setClockLocation("NATURAL");
         this._displayShowDesktopButton(false);
+
+        if (this.panel._updateSolidStyle) {
+            this._injectionsHandler.removeWithLabel('transparency');
+            this._injectionsHandler.destroy();
+            delete this.panel._dtpPosition;
+        }
 
         this.appMenu = null;
         this.container = null;
@@ -354,7 +389,6 @@ const dtpPanel = new Lang.Class({
 
         Main.overview._panelGhost.set_height(isTop ? size : 0);
         this._myPanelGhost.set_height(isTop ? 0 : size);
-        
 
         if(isTop) {
             this.panelBox.set_anchor_point(0, 0);
@@ -375,6 +409,8 @@ const dtpPanel = new Lang.Class({
             if(!this.panel.actor.has_style_class_name('dashtopanelBottom'))
                 this.panel.actor.add_style_class_name('dashtopanelBottom');
         }
+
+        Main.layoutManager._updateHotCorners();
     },
 
     _setActivitiesButtonVisible: function(isVisible) {
@@ -498,6 +534,41 @@ const dtpPanel = new Lang.Class({
 
             Main.overview.hide();
         }
+    },
+
+    _dtpUpdateSolidStyle: function() {
+        if (this.actor.has_style_pseudo_class('overview') || !Main.sessionMode.hasWindows) {
+            this._removeStyleClassName('solid');
+            return false;
+        }
+
+        /* Get all the windows in the active workspace that are in the
+         * primary monitor and visible */
+        let activeWorkspace = global.screen.get_active_workspace();
+        let windows = activeWorkspace.list_windows().filter(function(metaWindow) {
+            return metaWindow.is_on_primary_monitor() &&
+                metaWindow.showing_on_its_workspace() &&
+                metaWindow.get_window_type() != Meta.WindowType.DESKTOP;
+        });
+
+        /* Check if at least one window is near enough to the panel */
+        let [, panelTop] = this.actor.get_transformed_position();
+        let panelBottom = panelTop + this.actor.get_height();
+        let scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        let isNearEnough = windows.some(Lang.bind(this, function(metaWindow) {
+            if (this._dtpPosition === 'TOP') {
+                let verticalPosition = metaWindow.get_frame_rect().y;
+                return verticalPosition < panelBottom + 5 * scale;
+            } else {
+                let verticalPosition = metaWindow.get_frame_rect().y + metaWindow.get_frame_rect().height;
+                return verticalPosition > panelTop - 5 * scale;
+            }
+        }));
+
+        if (isNearEnough)
+            this._addStyleClassName('solid');
+        else
+            this._removeStyleClassName('solid');
     }
 });
 
@@ -644,5 +715,76 @@ function newViewSelectorAnimateOut(page) {
             vs._animateIn(oldPage)
     } else {
         vs._fadePageOut(page);
+    }
+}
+
+function newUpdateHotCorners() {
+    // destroy old hot corners
+    this.hotCorners.forEach(function(corner) {
+        if (corner)
+            corner.destroy();
+    });
+    this.hotCorners = [];
+
+    let size = this.panelBox.height;
+    let panelPosition = Main.layoutManager.panelBox.anchor_y == 0 ? St.Side.TOP : St.Side.BOTTOM;
+
+    // build new hot corners
+    for (let i = 0; i < this.monitors.length; i++) {
+        let monitor = this.monitors[i];
+        let cornerX = this._rtl ? monitor.x + monitor.width : monitor.x;
+        let cornerY = monitor.y;
+
+        let haveTopLeftCorner = true;
+        
+        // If the panel is on the bottom, don't add a topleft hot corner unless it is actually
+        // a top left panel. Otherwise, it stops the mouse as you are dragging across
+        // In the future, maybe we will automatically move the hotcorner to the bottom
+        // when the panel is positioned at the bottom
+        if (i != this.primaryIndex || panelPosition == St.Side.BOTTOM) {
+            // Check if we have a top left (right for RTL) corner.
+            // I.e. if there is no monitor directly above or to the left(right)
+            let besideX = this._rtl ? monitor.x + 1 : cornerX - 1;
+            let besideY = cornerY;
+            let aboveX = cornerX;
+            let aboveY = cornerY - 1;
+
+            for (let j = 0; j < this.monitors.length; j++) {
+                if (i == j)
+                    continue;
+                let otherMonitor = this.monitors[j];
+                if (besideX >= otherMonitor.x &&
+                    besideX < otherMonitor.x + otherMonitor.width &&
+                    besideY >= otherMonitor.y &&
+                    besideY < otherMonitor.y + otherMonitor.height) {
+                    haveTopLeftCorner = false;
+                    break;
+                }
+                if (aboveX >= otherMonitor.x &&
+                    aboveX < otherMonitor.x + otherMonitor.width &&
+                    aboveY >= otherMonitor.y &&
+                    aboveY < otherMonitor.y + otherMonitor.height) {
+                    haveTopLeftCorner = false;
+                    break;
+                }
+            }
+        }
+
+        if (haveTopLeftCorner) {
+            let corner = new Layout.HotCorner(this, monitor, cornerX, cornerY);
+            corner.setBarrierSize(size);
+            this.hotCorners.push(corner);
+        } else {
+            this.hotCorners.push(null);
+        }
+    }
+
+    this.emit('hot-corners-changed');
+}
+
+function newUpdatePanelBarrier() {
+    if (this._rightPanelBarrier) {
+        this._rightPanelBarrier.destroy();
+        this._rightPanelBarrier = null;
     }
 }

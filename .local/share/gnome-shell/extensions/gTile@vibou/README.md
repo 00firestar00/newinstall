@@ -1,26 +1,27 @@
-vibou.gTile
-===========
+# gTile
 
-Gnome-shell extension that tiles windows as you like.
+Gnome-shell extension that improves window tiling capabilities of stock gnome-shell.
 
-This extension is developed at [GitHub](https://extensions.gnome.org/extension/28/gtile/)
-If you are reading this documentation anywhere else, it might be out of date.
+gTile is used to moves/resize windows on a configurable grid scheme.
 
-Manual Installation
--------------------
+It can be used with either the mouse, or keyboard, including customizable keyboard presets for immediate window placement.
 
-*Gnome* extensions must be in the *Gnome* extentions directory with a subdirectory name
-which matches the **uuid** field of `metadata.json`.
+This extension is particularly useful for window management on (multiple) large monitors.
 
-See https://wiki.gnome.org/Projects/GnomeShell/Extensions for details.
+
+## Installation
+
+Preferred installation is from [Gnome Extensions](https://extensions.gnome.org)
+
+You can alternatively manually install the latest version from GitHub master branch:
 
 1. Clone the repository to the *Gnome* extensions folder.
 
    ```
-   git clone https://github.com/lundal/vibou.gTile.git ~/.local/share/gnome-shell/extensions/gTile@vibou
+   git clone https://github.com/gTile/gTile.git ~/.local/share/gnome-shell/extensions/gTile@vibou
    ```
 
-2. Restart *Gnome*
+2. Restart *Gnome* (only on X11, on Wayland you will have to log out and log back in)
 
    ```
    Alt-F2
@@ -28,103 +29,91 @@ See https://wiki.gnome.org/Projects/GnomeShell/Extensions for details.
    ```
 
 
-Configuration
-------------
+## Configuration
 
-To configure gTile open the file extension.js
-go down to SETTINGS comments
-and edit this part of the code:
+For configuration, please use the built-in preferences dialog (Gnome Tweak Tool -> Extensions -> gTile -> Preferences).
+In the *Help* tab you will find help and usage hints.
 
-    /*INIT SETTINGS HERE TO ADD OR REMOVE SETTINGS BUTTON*/
-    /*new GridSettingsButton(LABEL, NBCOL, NBROW) */
-    function initSettings()
-    {
-        //Here is where you add new grid size button
-        gridSettings[SETTINGS_GRID_SIZE] = [
-            new GridSettingsButton('2x2',2,2),
-            new GridSettingsButton('4x4',4,4),
-            new GridSettingsButton('6x6',6,6)
-        ];
-        
-        //example for new GridSettingsButton:
-        myCustomButton = new GridSettingsButton('Custom',8,8); //Going to be a 8x8 GridSettings
-        gridSettings[SETTINGS_GRID_SIZE].push(myCustomButton);
-        
-        
-        /*NEW SETTINGS*/    
-         //You can change those settings to set whatever you want by default
-         //Afterward you can change those parameters using the gTile interface
-         gridSettings[SETTINGS_AUTO_CLOSE] = true;
-         gridSettings[SETTINGS_ANIMATION] = true;
-    }
-
-Author
-------
-
-This extension has been developed by [vibou](https://github.com/vibou) with the
-help of the gnome-shell community. See
-[network](https://github.com/vibou/vibou.gTile/network) for details.
-           
-CHANGE LOG
-----------
-### V21
-
--   Fix an issue on tracking focused window
+* Keyboard shortcuts:
+	* Can be assigned from the preferences window (*Accelerators* tab)
+	* Both the key combinations and the respective function are configurable
+	* Can be Global (can be used directly without the main gTile window)
+	* Can be non-global (can only be used when the gTile window is shown)
+	* Up to 30 accelerators can be configured, which should be plenty
+* Grid schemes:
+	* Are defined in the preferences window (*Basic* tab)
+	* Written as a comma-separated list of grid sizes like `8x7,3x2,4x6,4x7` (no spaces)
+* Resize presets:
+	* Are defined in the preferences window (*Reset presets* tab) 
+	* Format: grid size, top left corner, bottom right corner
+	* Format examples: "2x2 0:1 0:1" or "6x4 0:2 3:3"
+	* Grids setup here size can be of any size, not necessarily what you have set up in grid sizes settings
 
 
-### V20
+## Usage with interface
 
--   Add compatibility with Gnome-Shell 10
+1. Make sure the window you want to resize has focus
+2. Click on the gTile icon on the tool bar, or press `Super+Enter` (default)
+3. The gTile dialog pop-up will show up in the center of your screen
 
-### V17
+### Using the mouse
 
--   Fix some UI Issues
+4. Use the mouse cursor to click on one of the desired corner coordinates, and then the other corner coordinates
+5. Window will resize after the second click
 
-### V16
+### Using the keyboard
 
--   UI changes
+4. Use the arrow keys to select the coordinate of the first corner and Shift-arrow to select the second coordinate
+5. a) Hit `Space` to change the grid scheme [optional]
+5. b) Hit `Enter` and the window will resize
+5. c) Hit `Escape` to cancel resize
 
-### V15
 
--   Compatibility Gnome Shell 3.6.1
-	
-### V14
+## Usage with no interface
 
--   Compatibility Gnome Shell 3.4.1 + small bug correction
+You can also resize windows using Keyboard shortcuts directly.
 
-### V13
+There are 3 groups of pre-configured shortcuts, representing the following grid schemes:
 
--   Add Key binding settings + Compatibility 3.4.1
+* Grid 2x2 -> `Super + Alt`
+* Grid 2x3 -> `Super + Control`
+* Grid 3x3 -> `Super + Shift`
 
-### V12
+These "grid selectors" are then combined with a keypad number to define the window placement:
 
--   Correct small bug on auto tile where monitor height was considered without gnome-panel on primaryMonitor
+Default shortcuts for Super+Alt+[1..9(keypad)]
 
-### V11
+1 - Bottom left quarter of screen
+2 - Bottom half
+3 - Bottom right quarter
+4 - Center left
+5 - Center
+6 - Center right
+7 - Top left quarter
+8 - Top half
+9 - Top right quarter
 
--   AutoTile function : 2 new auto tile features + Replace Animation and auto close text by icons
-    
-### V10
- 
--   Now gTile follows your focus window !! Thanks to Claus Beerta he implements it in a branch.
--   I change the implementation so that it works with  multi-screen and I also added animations.
-    
-### V9
+**Note:** Preconfigured keyboard shortcuts are optimized for horizontal screens.
 
--   Not validated
 
--   However he added the keybinding in settings (into the file extension.js) but it s still buggy I think
--   So I let it for those who wants to try it.
+## Overlap with stock Gnome-shell shortcuts
 
-### V8
+gTile is intended to **supplement** existing Gnome-shell keyboard shortcuts.
 
--   Correct bug where Desktop can be tile
--   3x2 button added by default
+Here are some useful Gnome built-ins to keep in mind when configuring gTile:
+* Super + Up - Maximize
+* Super + Down - Un-Maximize (return to size and position previous to maximizing)
+* Super + Left/Right - left/right half of screen
+* Shift + Super + Up/Down/Left/Right] - move window to adjacent monitor/workspace 
 
-### V7
 
--   Add Auto-close once resize
--   Add Smooth animation when toggle extension
--   New icon  
-    (/!\ auto-close may cause some bugs so let me know if you had any thanks).
+## Source code
 
+This extension is developed at [GitHub](https://github.com/gTile/gtile).
+
+It was originally developed by [vibou](https://github.com/vibou) with help from multiple contributors, and is now community supported.
+
+gTile is licensed under the [GPL v2+](https://www.gnu.org/licenses/gpl-2.0.html)
+
+
+## Enjoy!

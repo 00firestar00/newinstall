@@ -11,9 +11,10 @@
     "3.16", 
     "3.18", 
     "3.20", 
-    "3.22"
+    "3.22", 
+    "3.24"
   ], 
   "url": "https://github.com/eonpatapon/gnome-shell-extension-caffeine", 
   "uuid": "caffeine@patapon.info", 
-  "version": 26
+  "version": 27
 }
