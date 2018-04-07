@@ -49,7 +49,7 @@ sudo dpkg -i atom.deb
 apm install minimap minimap-git-diff
 
 # Jetbrains
-phpstorm='PhpStorm-2017.3.4'
+phpstorm='PhpStorm-2018.1'
 sudo wget "https://download.jetbrains.com/webide/$phpstorm.tar.gz" -O /opt/phpstorm.tar.gz
 sudo tar -zxf /opt/phpstorm.tar.gz -C /opt/
 sudo rm /opt/phpstorm.tar.gz

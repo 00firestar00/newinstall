@@ -44,13 +44,13 @@ rm atom.rpm
 apm install minimap minimap-git-diff
 
 # Jetbrains
-pycharm='pycharm-community-2017.1.4'
+pycharm='pycharm-community-2018.1'
 sudo wget "https://download.jetbrains.com/python/$pycharm.tar.gz" -O /opt/pycharm.tar.gz
 sudo tar -zxf pycharm.tar.gz
 sudo mv $pycharm PyCharm
 rm pycharm.tar.gz
 
-phpstorm='PhpStorm-2017.1.4'
+phpstorm='PhpStorm-2018.1'
 sudo wget "https://download.jetbrains.com/webide/$phpstorm.tar.gz" -O /opt/phpstorm.tar.gz
 sudo tar -zxf phpstorm.tar.gz
 rm phpstorm.tar.gz
